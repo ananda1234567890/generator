@@ -1,6 +1,12 @@
 export type JobKind = "video" | "image" | "headshot";
-export type JobStatus = "queued" | "submitting" | "running" | "saving" | "done" | "failed";
+export type JobStatus = "queued" | "submitting" | "running" | "done" | "failed";
 
+// An image the browser sends to the server: small uploads travel as data URLs,
+// results that live at a provider link travel as URLs.
+export type ImageRef = { dataUrl: string } | { url: string };
+
+// Input to the provider adapters. Image fields are keys the server maps to
+// bytes (see app/api/submit), not storage paths.
 export interface JobParams {
   rawPrompt: string;
   tags: string[];
@@ -8,45 +14,35 @@ export interface JobParams {
   aspectRatio: string;
   duration?: number;
   audio?: boolean;
-  startFrame?: string; // storage path
-  endFrame?: string; // storage path
-  refs: string[]; // storage paths of reference images
-  headshotName?: string; // headshot jobs: name to save the result under
-  saveAttempts?: number;
+  startFrame?: string;
+  endFrame?: string;
+  refs: string[];
 }
 
-export interface Job {
-  id: string;
-  batch_id: string | null;
+export interface SubmitBody {
   kind: JobKind;
-  model: string; // ModelDef.id
-  provider: "elevenlabs" | "leonardo";
+  modelId: string;
   prompt: string;
-  params: JobParams;
-  status: JobStatus;
-  provider_job_id: string | null;
-  error: string | null;
-  warning: string | null;
-  output_path: string | null;
-  mime: string | null;
-  remote_url: string | null;
-  created_at: string;
-  updated_at: string;
-  polled_at: string | null;
+  resolution: string;
+  aspectRatio: string;
+  duration?: number;
+  audio?: boolean;
+  startFrame?: ImageRef;
+  endFrame?: ImageRef;
+  tagged: { name: string; image: ImageRef }[]; // headshots tagged with @name in the prompt
+  sources?: ImageRef[]; // headshot jobs: the photos of the person
 }
 
-export interface JobView extends Job {
-  url: string | null; // signed URL for the saved file
+export interface SubmitResult {
+  providerJobId: string;
+  prompt: string; // prompt with @ removed
+  warnings: string[];
 }
 
-export interface Headshot {
-  id: string;
-  name: string;
-  storage_path: string;
-  source: "upload" | "generated";
-  created_at: string;
-}
-
-export interface HeadshotView extends Headshot {
-  url: string | null;
+export interface PollResponse {
+  state: "running" | "done" | "failed";
+  url?: string; // provider link to the result (expires, about an hour for ElevenLabs)
+  dataUrl?: string; // small images come back inline so they never expire
+  mime?: string;
+  error?: string;
 }

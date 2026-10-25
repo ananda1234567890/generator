@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthed } from "./auth";
-import { UserError } from "./jobs";
+import { UserError } from "./plan";
 
 // Wrap an API handler: require login and turn errors into JSON responses.
 export async function handle(fn: () => Promise<unknown>) {

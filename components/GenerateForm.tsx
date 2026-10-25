@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { enqueue, useStore } from "@/lib/client/store";
 import { MODELS, type Kind, type ModelDef } from "@/lib/models";
-import type { HeadshotView } from "@/lib/types";
+import { parseTags } from "@/lib/tags";
+import type { SubmitBody } from "@/lib/types";
 import { ImagePicker } from "./ImagePicker";
 
 const field = "space-y-1 text-sm";
 const labelCls = "text-xs text-muted";
+const MAX_BODY_CHARS = 3_800_000; // Vercel rejects request bodies over about 4.5 MB
 
-export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
+export function GenerateForm() {
+  const { headshots } = useStore();
   const [kind, setKind] = useState<Kind>("video");
   const models = useMemo(() => MODELS.filter((m) => m.kind === kind), [kind]);
   const [modelId, setModelId] = useState(models[0].id);
@@ -22,17 +26,8 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [audio, setAudio] = useState(true);
   const [startFrame, setStartFrame] = useState<string[]>([]);
   const [endFrame, setEndFrame] = useState<string[]>([]);
-  const [heads, setHeads] = useState<HeadshotView[]>([]);
-  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    fetch("/api/headshots")
-      .then((r) => r.json())
-      .then((b) => setHeads(b.headshots ?? []))
-      .catch(() => {});
-  }, []);
 
   function pickModel(id: string) {
     const m = MODELS.find((x) => x.id === id)!;
@@ -52,45 +47,37 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
   function tag(name: string) {
     const el = promptRef.current;
     const at = el?.selectionStart ?? prompt.length;
-    const next = `${prompt.slice(0, at)}${at && !/\s$/.test(prompt.slice(0, at)) ? " " : ""}@${name} ${prompt.slice(at)}`;
-    setPrompt(next);
+    const before = prompt.slice(0, at);
+    setPrompt(`${before}${before && !/\s$/.test(before) ? " " : ""}@${name} ${prompt.slice(at)}`);
     el?.focus();
   }
 
-  async function submit(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind,
-          modelId: model.id,
-          prompt,
-          count,
-          resolution,
-          aspectRatio: aspect,
-          duration: model.durations ? duration : undefined,
-          audio: model.audio ? audio : undefined,
-          startFrame: startFrame[0],
-          endFrame: endFrame[0],
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Failed");
-      const warn = body.warnings?.length ? ` Note: ${body.warnings.join(" ")}` : "";
-      setMsg({ ok: true, text: `Queued ${body.count}.${warn}` });
-      onSubmitted();
-    } catch (err) {
-      setMsg({ ok: false, text: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(false);
+    const { names } = parseTags(prompt, headshots.map((h) => h.name));
+    const body: SubmitBody = {
+      kind,
+      modelId: model.id,
+      prompt,
+      resolution,
+      aspectRatio: aspect,
+      duration: model.durations ? duration : undefined,
+      audio: model.audio ? audio : undefined,
+      startFrame: startFrame[0] ? { dataUrl: startFrame[0] } : undefined,
+      endFrame: endFrame[0] ? { dataUrl: endFrame[0] } : undefined,
+      tagged: names.map((n) => {
+        const h = headshots.find((x) => x.name === n)!;
+        return { name: n, image: h.image };
+      }),
+    };
+    if (JSON.stringify(body).length > MAX_BODY_CHARS) {
+      setMsg({ ok: false, text: "Those images are too large to send together. Use fewer images or tags." });
+      return;
     }
+    enqueue(Array.from({ length: count }, () => ({ body })));
+    setMsg({ ok: true, text: `Queued ${count}. Watch the cards on the right.` });
   }
 
-  const select = "w-full";
   return (
     <form onSubmit={submit} className="space-y-4 rounded-2xl border border-line bg-panel p-4">
       <div className="flex gap-1 rounded-lg bg-black/30 p-1 text-sm">
@@ -108,7 +95,7 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
 
       <label className={field}>
         <span className={labelCls}>Model</span>
-        <select className={select} value={model.id} onChange={(e) => pickModel(e.target.value)}>
+        <select value={model.id} onChange={(e) => pickModel(e.target.value)}>
           {models.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
@@ -130,9 +117,9 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
         />
       </label>
 
-      {heads.length > 0 && (
+      {headshots.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {heads.map((h) => (
+          {headshots.map((h) => (
             <button
               key={h.id}
               type="button"
@@ -140,7 +127,7 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
               className="flex items-center gap-2 rounded-full border border-line py-1 pl-1 pr-3 text-xs hover:border-accent"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {h.url && <img src={h.url} alt="" className="h-6 w-6 rounded-full object-cover" />}@{h.name}
+              <img src={h.preview} alt="" className="h-6 w-6 rounded-full object-cover" />@{h.name}
             </button>
           ))}
         </div>
@@ -149,12 +136,12 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <label className={field}>
           <span className={labelCls}>How many</span>
-          <input type="number" min={1} max={10} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+          <input type="number" min={1} max={10} value={count} onChange={(e) => setCount(Math.min(10, Math.max(1, Number(e.target.value) || 1)))} />
         </label>
         {model.durations && (
           <label className={field}>
             <span className={labelCls}>Length (seconds)</span>
-            <select className={select} value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+            <select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
               {model.durations.map((d) => (
                 <option key={d} value={d}>
                   {d}s
@@ -164,8 +151,8 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
           </label>
         )}
         <label className={field}>
-          <span className={labelCls}>{kind === "video" ? "Quality" : model.providerModel === "gpt-image-2" ? "Quality" : "Resolution"}</span>
-          <select className={select} value={resolution} onChange={(e) => setResolution(e.target.value)}>
+          <span className={labelCls}>{kind === "video" || model.providerModel === "gpt-image-2" ? "Quality" : "Resolution"}</span>
+          <select value={resolution} onChange={(e) => setResolution(e.target.value)}>
             {model.resolutions.map((r) => (
               <option key={r}>{r}</option>
             ))}
@@ -173,7 +160,7 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
         </label>
         <label className={field}>
           <span className={labelCls}>Aspect ratio</span>
-          <select className={select} value={aspect} onChange={(e) => setAspect(e.target.value)}>
+          <select value={aspect} onChange={(e) => setAspect(e.target.value)}>
             {model.aspectRatios.map((a) => (
               <option key={a}>{a}</option>
             ))}
@@ -191,19 +178,19 @@ export function GenerateForm({ onSubmitted }: { onSubmitted: () => void }) {
       {model.startFrame && (
         <div className={field}>
           <span className={labelCls}>Start image {model.startFrame === "required" ? "(required unless you tag a headshot)" : "(optional)"}</span>
-          <ImagePicker label="+ Add start image" paths={startFrame} onChange={setStartFrame} />
+          <ImagePicker label="+ Add start image" images={startFrame} onChange={setStartFrame} />
         </div>
       )}
       {model.endFrame && startFrame.length > 0 && (
         <div className={field}>
           <span className={labelCls}>End image (optional)</span>
-          <ImagePicker label="+ Add end image" paths={endFrame} onChange={setEndFrame} />
+          <ImagePicker label="+ Add end image" images={endFrame} onChange={setEndFrame} />
         </div>
       )}
 
       {msg && <p className={`text-sm ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>}
-      <button disabled={busy || !prompt.trim()} className="w-full rounded-lg bg-accent px-4 py-2.5 font-medium disabled:opacity-50">
-        {busy ? "Queuing…" : `Generate ${count > 1 ? count : ""} ${kind}${count > 1 ? "s" : ""}`}
+      <button disabled={!prompt.trim()} className="w-full rounded-lg bg-accent px-4 py-2.5 font-medium disabled:opacity-50">
+        {`Generate ${count > 1 ? count + " " : ""}${kind}${count > 1 ? "s" : ""}`}
       </button>
     </form>
   );

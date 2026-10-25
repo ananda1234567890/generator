@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { JobList } from "@/components/JobList";
-import { useJobs } from "@/components/useJobs";
+import { useStore } from "@/lib/client/store";
 
 const FILTERS = ["all", "video", "image", "headshot", "failed"] as const;
 
-export default function LibraryPage() {
-  const { jobs, error, refresh } = useJobs();
+export default function SessionPage() {
+  const { jobs } = useStore();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
-  const shown = (jobs ?? []).filter((j) => (filter === "all" ? true : filter === "failed" ? j.status === "failed" : j.kind === filter));
+  const shown = jobs.filter((j) => (filter === "all" ? true : filter === "failed" ? j.status === "failed" : j.kind === filter));
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted">Everything from this session. It disappears when you close the tab, so download what you need.</p>
       <div className="flex gap-2">
         {FILTERS.map((f) => (
           <button
@@ -23,8 +24,7 @@ export default function LibraryPage() {
           </button>
         ))}
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {jobs ? <JobList jobs={shown} onChanged={refresh} /> : <p className="text-sm text-muted">Loading…</p>}
+      <JobList jobs={shown} />
     </div>
   );
 }

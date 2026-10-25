@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isAuthed } from "@/lib/auth";
+import { Engine } from "@/components/Engine";
 import { logout } from "../login/actions";
 
 const TABS = [
   { href: "/generate", label: "Generate" },
   { href: "/headshots", label: "Headshots" },
-  { href: "/library", label: "Library" },
+  { href: "/library", label: "Session" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -14,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!(await isAuthed())) redirect("/login");
   return (
     <>
+      <Engine />
       <header className="border-b border-line">
         <nav className="mx-auto flex max-w-6xl items-center gap-1 px-4 py-3">
           <span className="mr-4 font-semibold">Generator</span>

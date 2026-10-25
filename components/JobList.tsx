@@ -1,32 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { dismissJob, retryJob, type ClientJob } from "@/lib/client/store";
 import { getModel } from "@/lib/models";
-import type { JobView } from "@/lib/types";
 
 const LABEL: Record<string, string> = {
   queued: "Queued",
   submitting: "Starting…",
   running: "Generating…",
-  saving: "Saving…",
   done: "Done",
   failed: "Failed",
 };
 
-function JobCard({ job, onRetry }: { job: JobView; onRetry: () => void }) {
-  const model = getModel(job.model);
+function downloadHref(job: ClientJob) {
+  const ext = job.kind === "video" ? "mp4" : job.mime?.includes("jpeg") ? "jpg" : "png";
+  const name = `${job.kind}-${job.id.slice(0, 8)}.${ext}`;
+  if (job.dataUrl) return { href: job.dataUrl, name };
+  if (job.url) return { href: `/api/download?url=${encodeURIComponent(job.url)}&name=${name}`, name };
+  return null;
+}
+
+function JobCard({ job }: { job: ClientJob }) {
+  const model = getModel(job.modelId);
   const active = !["done", "failed"].includes(job.status);
-  const p = job.params;
-  const meta = [p.resolution, p.aspectRatio, p.duration ? `${p.duration}s` : null].filter(Boolean).join(" · ");
+  const media = job.dataUrl ?? job.url;
+  const dl = downloadHref(job);
+  const m = job.meta;
+  const meta = [m.resolution, m.aspectRatio, m.duration ? `${m.duration}s` : null].filter(Boolean).join(" · ");
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-panel">
       <div className="flex aspect-video items-center justify-center bg-black">
-        {job.status === "done" && job.url ? (
+        {job.status === "done" && media ? (
           job.kind === "video" ? (
-            <video src={job.url} controls preload="metadata" className="h-full w-full object-contain" />
+            <video src={media} controls preload="metadata" className="h-full w-full object-contain" />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={job.url} alt={job.prompt} className="h-full w-full object-contain" />
+            <img src={media} alt={job.prompt} className="h-full w-full object-contain" />
           )
         ) : job.status === "failed" ? (
           <p className="px-4 text-center text-sm text-red-400">{job.error ?? "Failed"}</p>
@@ -40,7 +48,7 @@ function JobCard({ job, onRetry }: { job: JobView; onRetry: () => void }) {
       <div className="space-y-1 p-3 text-sm">
         <p className="line-clamp-2">{job.prompt}</p>
         <p className="text-xs text-muted">
-          {model?.label ?? job.model}
+          {model?.label ?? job.modelId}
           {meta && ` · ${meta}`}
         </p>
         {job.warning && <p className="text-xs text-amber-400">{job.warning}</p>}
@@ -48,15 +56,20 @@ function JobCard({ job, onRetry }: { job: JobView; onRetry: () => void }) {
           <span className={job.status === "failed" ? "text-red-400" : active ? "text-amber-300" : "text-emerald-400"}>
             {LABEL[job.status]}
           </span>
-          {job.status === "failed" && (
-            <button onClick={onRetry} className="text-accent hover:underline">
+          {job.status === "failed" && job.body && (
+            <button onClick={() => retryJob(job.id)} className="text-accent hover:underline">
               Retry
             </button>
           )}
-          {job.status === "done" && job.url && (
-            <a href={job.url} download target="_blank" rel="noreferrer" className="text-accent hover:underline">
+          {job.status === "done" && dl && (
+            <a href={dl.href} download={dl.name} className="text-accent hover:underline">
               Download
             </a>
+          )}
+          {!active && (
+            <button onClick={() => dismissJob(job.id)} className="ml-auto text-muted hover:text-foreground">
+              Dismiss
+            </button>
           )}
         </div>
       </div>
@@ -64,22 +77,13 @@ function JobCard({ job, onRetry }: { job: JobView; onRetry: () => void }) {
   );
 }
 
-export function JobList({ jobs, onChanged }: { jobs: JobView[]; onChanged: () => void }) {
-  const [err, setErr] = useState<string | null>(null);
-  async function retry(id: string) {
-    const res = await fetch(`/api/jobs/${id}/retry`, { method: "POST" });
-    if (!res.ok) setErr((await res.json()).error ?? "Retry failed");
-    else onChanged();
-  }
+export function JobList({ jobs }: { jobs: ClientJob[] }) {
   if (!jobs.length) return <p className="text-sm text-muted">Nothing here yet.</p>;
   return (
-    <>
-      {err && <p className="mb-2 text-sm text-red-400">{err}</p>}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {jobs.map((j) => (
-          <JobCard key={j.id} job={j} onRetry={() => retry(j.id)} />
-        ))}
-      </div>
-    </>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {jobs.map((j) => (
+        <JobCard key={j.id} job={j} />
+      ))}
+    </div>
   );
 }
