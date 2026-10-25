@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ImagePicker } from "@/components/ImagePicker";
 import { JobList } from "@/components/JobList";
-import { addHeadshot, enqueue, headshotNameTaken, removeHeadshot, useStore } from "@/lib/client/store";
+import { addHeadshot, enqueue, exportHeadshots, headshotNameTaken, importHeadshots, removeHeadshot, useStore } from "@/lib/client/store";
 import { HEADSHOT_MODEL_ID } from "@/lib/models";
 import { NAME_RE } from "@/lib/tags";
 import type { SubmitBody } from "@/lib/types";
@@ -20,6 +20,8 @@ export default function HeadshotsPage() {
   const [prompt, setPrompt] = useState("");
   const [count, setCount] = useState(1);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [backupMsg, setBackupMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const restoreInput = useRef<HTMLInputElement>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +56,21 @@ export default function HeadshotsPage() {
     }
     setPhotos([]);
     setName("");
+  }
+
+  async function restore(file: File | undefined) {
+    if (!file) return;
+    try {
+      const { added, skipped } = await importHeadshots(file);
+      setBackupMsg({ ok: true, text: `Restored ${added} headshot${added === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} (name already exists or invalid)` : ""}.` });
+    } catch (e) {
+      setBackupMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    }
+    if (restoreInput.current) restoreInput.current.value = "";
+  }
+
+  function remove(id: string, name: string) {
+    if (confirm(`Remove @${name} for good? This can't be undone.\n\nTip: use "Back up headshots" first if you might want it back.`)) removeHeadshot(id);
   }
 
   const pending = jobs.filter((j) => j.kind === "headshot" && j.status !== "done");
@@ -129,7 +146,7 @@ export default function HeadshotsPage() {
                       <a href={h.preview} download={`${h.name}.jpg`} className="text-accent hover:underline">
                         Save
                       </a>
-                      <button onClick={() => removeHeadshot(h.id)} className="text-muted hover:text-red-400">
+                      <button onClick={() => remove(h.id, h.name)} className="text-muted hover:text-red-400">
                         Remove
                       </button>
                     </div>
@@ -138,6 +155,28 @@ export default function HeadshotsPage() {
               ))}
             </div>
           )}
+        </div>
+        <div className="space-y-2 rounded-xl border border-line bg-panel p-4 text-sm">
+          <p className="font-medium">Keep your headshots safe</p>
+          <p className="text-xs text-muted">
+            Headshots are saved in this browser for this web address only. Always open the app from the same link. A different link
+            (including a new Vercel project or a per-deployment preview link) has its own empty storage, and clearing browser data wipes
+            them. A backup file lets you restore them anywhere.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setBackupMsg({ ok: true, text: `Backed up ${exportHeadshots()} headshots. Keep the downloaded file somewhere safe.` })}
+              disabled={headshots.length === 0}
+              className="rounded-lg border border-line px-3 py-1.5 disabled:opacity-50"
+            >
+              Back up headshots
+            </button>
+            <button onClick={() => restoreInput.current?.click()} className="rounded-lg border border-line px-3 py-1.5">
+              Restore from backup
+            </button>
+            <input ref={restoreInput} type="file" accept="application/json,.json" hidden onChange={(e) => restore(e.target.files?.[0])} />
+            {backupMsg && <span className={`text-xs ${backupMsg.ok ? "text-emerald-400" : "text-red-400"}`}>{backupMsg.text}</span>}
+          </div>
         </div>
         {pending.length > 0 && (
           <div className="space-y-3">

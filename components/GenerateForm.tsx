@@ -8,6 +8,7 @@ import { MODELS, type Kind, type ModelDef } from "@/lib/models";
 import { parseTags } from "@/lib/tags";
 import type { SubmitBody } from "@/lib/types";
 import { ImagePicker } from "./ImagePicker";
+import { PromptBox } from "./PromptBox";
 
 const field = "space-y-1 text-sm";
 const labelCls = "text-xs text-muted";
@@ -110,17 +111,10 @@ export function GenerateForm() {
         {model.note && <p className="text-xs text-amber-400">{model.note}</p>}
       </label>
 
-      <label className={field}>
-        <span className={labelCls}>Prompt — tag a headshot with @name</span>
-        <textarea
-          ref={promptRef}
-          rows={5}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe the shot…"
-          maxLength={1500}
-        />
-      </label>
+      <div className={field}>
+        <span className={labelCls}>Prompt — type @ to pick a headshot</span>
+        <PromptBox value={prompt} onChange={setPrompt} headshots={headshots} textareaRef={promptRef} />
+      </div>
 
       {headshots.length > 0 && (
         <div className="flex flex-wrap gap-2">

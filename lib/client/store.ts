@@ -69,14 +69,27 @@ function persistSaved(): boolean {
 }
 
 function readSaved(): { keys: Keys; headshots: ClientHeadshot[] } {
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(SAVED_KEY);
+    raw = localStorage.getItem(SAVED_KEY);
     if (raw) {
       const saved = JSON.parse(raw);
       return { keys: saved.keys ?? {}, headshots: saved.headshots ?? [] };
     }
-  } catch {}
+  } catch {
+    // Unreadable data: keep a copy instead of letting the next save overwrite it.
+    try {
+      if (raw) localStorage.setItem(SAVED_KEY + "_unreadable_backup", raw);
+    } catch {}
+  }
   return { keys: {}, headshots: [] };
+}
+
+// Ask the browser not to clear our saved data when it is low on space.
+export function requestPersistentStorage() {
+  try {
+    void navigator.storage?.persist?.();
+  } catch {}
 }
 
 function load() {
@@ -165,7 +178,52 @@ export async function addHeadshot(h: Omit<ClientHeadshot, "id">): Promise<boolea
     return false;
   }
   emit();
+  requestPersistentStorage();
   return true;
+}
+
+// ---- backup / restore of headshots (a file you keep, in case browser data is ever cleared) ----
+
+interface BackupFile {
+  app: "generator-headshots";
+  version: 1;
+  headshots: { name: string; dataUrl: string; source: "upload" | "generated" }[];
+}
+
+export function exportHeadshots(): number {
+  const list = state.headshots.flatMap((h) => ("dataUrl" in h.image ? [{ name: h.name, dataUrl: h.image.dataUrl, source: h.source }] : []));
+  const file: BackupFile = { app: "generator-headshots", version: 1, headshots: list };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: "application/json" }));
+  a.download = `headshots-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  return list.length;
+}
+
+// Adds headshots from a backup file. Names you already have are left alone.
+export async function importHeadshots(file: File): Promise<{ added: number; skipped: number }> {
+  let data: BackupFile;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    throw new Error("That file is not a headshots backup.");
+  }
+  if (data?.app !== "generator-headshots" || !Array.isArray(data.headshots)) throw new Error("That file is not a headshots backup.");
+  let added = 0;
+  let skipped = 0;
+  for (const h of data.headshots) {
+    const ok = typeof h?.name === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(h.name) && typeof h.dataUrl === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(h.dataUrl);
+    if (!ok || headshotNameTaken(h.name)) {
+      skipped++;
+      continue;
+    }
+    if (!(await addHeadshot({ name: h.name, image: { dataUrl: h.dataUrl }, preview: h.dataUrl, source: h.source === "generated" ? "generated" : "upload" }))) {
+      throw new Error(`Your browser's storage is full after adding ${added}. Remove some headshots and try again.`);
+    }
+    added++;
+  }
+  return { added, skipped };
 }
 
 export function removeHeadshot(id: string) {
@@ -319,6 +377,7 @@ function step() {
 export function startEngine() {
   load();
   emit();
+  requestPersistentStorage();
   const timer = setInterval(step, 2000);
   const warn = (e: BeforeUnloadEvent) => {
     // Generated results only exist in this tab, so warn before they are lost.

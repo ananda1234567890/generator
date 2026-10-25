@@ -7,6 +7,8 @@ A dashboard for generating AI video, images and headshots with your own API keys
 - **Session** — everything generated in this tab, with filters and Retry for failed jobs.
 - **Settings** — paste, change or remove your API keys whenever you want.
 
+Video goes up to 1080p on Seedance 2.0 and 2.5, Kling and Veo (ElevenLabs limits Seedance 2.0 Fast and Mini to 720p).
+
 Providers: ElevenLabs (Seedance 2.0 / 2.0 Fast / 2.5, Veo 3.1, images, headshots) and Leonardo (Kling 3.0 / 2.6 / 2.5 Turbo, Seedance 2.0 / 2.5).
 
 ## What is kept, and for how long
@@ -21,9 +23,12 @@ Providers: ElevenLabs (Seedance 2.0 / 2.0 Fast / 2.5, Veo 3.1, images, headshots
 - Refreshing or closing the tab loses generated results. The browser warns you first. They still exist in your ElevenLabs / Leonardo history.
 - Keys travel over HTTPS with each request so the server can call the provider for you. The server does not store or log them. Don't save keys in a browser profile other people use.
 - Chrome's **Memory Saver** can unload idle tabs, which would lose results. In Chrome: Settings → Performance → "Always keep these sites active" → add this site.
+- Headshots are kept per web address. Always open the app from the same link (a new Vercel project, a different domain or a per-deployment preview link has its own empty storage). The Headshots tab has **Back up headshots** / **Restore from backup** so you can keep a file copy. Removing a headshot asks for confirmation, and the app asks the browser to protect saved data from automatic cleanup.
 - Browser storage is limited (about 5 MB). Headshots are saved at reduced size, so dozens fit. If it fills up, you are told and can remove some.
 
 ## How `@name` tags work
+
+Type `@` in the prompt and your headshots appear in a list (alphabetical). Keep typing to filter, use ↑/↓ and Enter or Tab (or click) to pick, Esc to close. Click on an existing `@tag` in a pasted prompt to see all your headshots and swap it. Names that don't match any headshot are flagged under the box.
 
 | Model supports | What happens |
 | --- | --- |
