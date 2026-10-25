@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { handle } from "@/lib/api";
 import { resolveImage } from "@/lib/images";
+import { keysFrom } from "@/lib/keys";
 import { HEADSHOT_MODEL_ID, getModel } from "@/lib/models";
 import { UserError, planInputs, validate } from "@/lib/plan";
 import { submit } from "@/lib/providers";
@@ -11,6 +12,7 @@ export const maxDuration = 60;
 
 // Starts one generation at the provider and returns its id. Nothing is stored.
 export async function POST(req: NextRequest) {
+  const keys = keysFrom(req.headers);
   let body: SubmitBody;
   try {
     body = (await req.json()) as SubmitBody;
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
       prompt: isHeadshot ? raw : prompt,
       params,
       load: async (key) => files.get(key)!,
+      keys,
     });
     return { providerJobId, prompt: isHeadshot ? raw : prompt, warnings: plan.warnings };
   });

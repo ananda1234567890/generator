@@ -1,14 +1,8 @@
 import { ElevenLabsClient, type ElevenLabs } from "@elevenlabs/elevenlabs-js";
+import { requireKey, type Keys } from "../keys";
 import type { PollResult, SubmitArgs } from "./types";
 
-let client: ElevenLabsClient | null = null;
-function api() {
-  if (client) return client;
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) throw new Error("ELEVENLABS_API_KEY is not set");
-  client = new ElevenLabsClient({ apiKey });
-  return client;
-}
+const api = (keys: Keys) => new ElevenLabsClient({ apiKey: requireKey(keys, "elevenlabs") });
 
 type Mime = ElevenLabs.InlineImageReferenceMimeType;
 const MIMES: string[] = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
@@ -19,8 +13,8 @@ async function inline(path: string, load: SubmitArgs["load"]): Promise<ElevenLab
   return { type: "inline_base64", contentBase64: bytes.toString("base64"), mimeType: m as Mime };
 }
 
-export async function submit({ model, prompt, params, load }: SubmitArgs): Promise<string> {
-  const c = api();
+export async function submit({ model, prompt, params, load, keys }: SubmitArgs): Promise<string> {
+  const c = api(keys);
   const refs = await Promise.all(params.refs.map((p) => inline(p, load)));
 
   if (model.kind === "image") {
@@ -57,8 +51,8 @@ export async function submit({ model, prompt, params, load }: SubmitArgs): Promi
   return res.id;
 }
 
-export async function poll(kind: "video" | "image", id: string): Promise<PollResult> {
-  const c = api();
+export async function poll(kind: "video" | "image", id: string, keys: Keys): Promise<PollResult> {
+  const c = api(keys);
   const res = kind === "video" ? await c.flows.video.get(id) : await c.flows.image.get(id);
   if (res.status === "completed") return { state: "done", url: res.contentUrl, mime: res.contentMimeType };
   if (res.status === "failed") {

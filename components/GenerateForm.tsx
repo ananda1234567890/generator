@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { enqueue, useStore } from "@/lib/client/store";
+import { PROVIDER_NAMES } from "@/lib/keys";
 import { MODELS, type Kind, type ModelDef } from "@/lib/models";
 import { parseTags } from "@/lib/tags";
 import type { SubmitBody } from "@/lib/types";
@@ -12,7 +14,7 @@ const labelCls = "text-xs text-muted";
 const MAX_BODY_CHARS = 3_800_000; // Vercel rejects request bodies over about 4.5 MB
 
 export function GenerateForm() {
-  const { headshots } = useStore();
+  const { headshots, keys } = useStore();
   const [kind, setKind] = useState<Kind>("video");
   const models = useMemo(() => MODELS.filter((m) => m.kind === kind), [kind]);
   const [modelId, setModelId] = useState(models[0].id);
@@ -52,8 +54,11 @@ export function GenerateForm() {
     el?.focus();
   }
 
+  const missingKey = !keys[model.provider];
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (missingKey) return;
     const { names } = parseTags(prompt, headshots.map((h) => h.name));
     const body: SubmitBody = {
       kind,
@@ -188,8 +193,17 @@ export function GenerateForm() {
         </div>
       )}
 
+      {missingKey && (
+        <p className="text-sm text-amber-400">
+          Add your {PROVIDER_NAMES[model.provider]} API key in{" "}
+          <Link href="/settings" className="underline">
+            Settings
+          </Link>{" "}
+          to use this model.
+        </p>
+      )}
       {msg && <p className={`text-sm ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>}
-      <button disabled={!prompt.trim()} className="w-full rounded-lg bg-accent px-4 py-2.5 font-medium disabled:opacity-50">
+      <button disabled={!prompt.trim() || missingKey} className="w-full rounded-lg bg-accent px-4 py-2.5 font-medium disabled:opacity-50">
         {`Generate ${count > 1 ? count + " " : ""}${kind}${count > 1 ? "s" : ""}`}
       </button>
     </form>

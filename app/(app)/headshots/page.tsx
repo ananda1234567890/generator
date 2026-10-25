@@ -13,7 +13,7 @@ const DEFAULT_PROMPT =
   "Professional studio headshot of the person in the reference photos. Keep their face, features and skin tone exactly the same. Soft natural light, neutral background, looking at the camera, sharp focus.";
 
 export default function HeadshotsPage() {
-  const { headshots, jobs } = useStore();
+  const { headshots, jobs, keys } = useStore();
   const [mode, setMode] = useState<Mode>("generate");
   const [name, setName] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
@@ -21,16 +21,18 @@ export default function HeadshotsPage() {
   const [count, setCount] = useState(1);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const n = name.trim();
     if (!NAME_RE.test(n)) return setMsg({ ok: false, text: "Name can use letters, numbers, - and _ (no spaces)" });
     if (headshotNameTaken(n)) return setMsg({ ok: false, text: `@${n} already exists` });
 
     if (mode === "upload") {
-      addHeadshot({ name: n, image: { dataUrl: photos[0] }, preview: photos[0], source: "upload" });
-      setMsg({ ok: true, text: `Saved @${n} for this session` });
+      const ok = await addHeadshot({ name: n, image: { dataUrl: photos[0] }, preview: photos[0], source: "upload" });
+      if (!ok) return setMsg({ ok: false, text: "Your browser's storage is full. Remove a headshot first." });
+      setMsg({ ok: true, text: `Saved @${n}` });
     } else {
+      if (!keys.elevenlabs) return setMsg({ ok: false, text: "Add your ElevenLabs API key in Settings first." });
       const taken = new Set(headshots.map((h) => h.name.toLowerCase()));
       const items = Array.from({ length: count }, (_, i) => {
         let candidate = i === 0 ? n : `${n}${i + 1}`;
@@ -112,9 +114,9 @@ export default function HeadshotsPage() {
 
       <section className="space-y-6">
         <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted">Your headshots (this session)</h2>
+          <h2 className="text-sm font-medium text-muted">Your headshots (saved in this browser)</h2>
           {headshots.length === 0 ? (
-            <p className="text-sm text-muted">None yet. They disappear when you close the tab.</p>
+            <p className="text-sm text-muted">None yet. Headshots you save stay here when you close the tab.</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {headshots.map((h) => (

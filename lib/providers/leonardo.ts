@@ -1,11 +1,10 @@
+import { requireKey, type Keys } from "../keys";
 import { ASPECT_DIMS } from "../models";
 import type { PollResult, SubmitArgs } from "./types";
 
 const BASE = "https://cloud.leonardo.ai/api/rest";
 
-function headers() {
-  const key = process.env.LEONARDO_API_KEY;
-  if (!key) throw new Error("LEONARDO_API_KEY is not set");
+function headers(key: string) {
   return {
     accept: "application/json",
     "content-type": "application/json",
@@ -13,10 +12,10 @@ function headers() {
   };
 }
 
-async function call(method: "GET" | "POST", path: string, body?: unknown) {
+async function call(key: string, method: "GET" | "POST", path: string, body?: unknown) {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: headers(),
+    headers: headers(key),
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -58,10 +57,10 @@ const EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 
-async function upload(path: string, load: SubmitArgs["load"]): Promise<string> {
+async function upload(key: string, path: string, load: SubmitArgs["load"]): Promise<string> {
   const { bytes, mime } = await load(path);
   const ext = EXT[mime] ?? "jpg";
-  const init = (await call("POST", "/v1/init-image", { extension: ext })) as {
+  const init = (await call(key, "POST", "/v1/init-image", { extension: ext })) as {
     uploadInitImage: { url: string; fields: string; id: string };
   };
   const { url, fields, id } = init.uploadInitImage;
@@ -73,13 +72,14 @@ async function upload(path: string, load: SubmitArgs["load"]): Promise<string> {
   return id;
 }
 
-export async function submit({ model, prompt, params, load }: SubmitArgs): Promise<string> {
+export async function submit({ model, prompt, params, load, keys }: SubmitArgs): Promise<string> {
+  const key = requireKey(keys, "leonardo");
   if (model.kind !== "video") throw new Error("Leonardo adapter only does video");
   const dims = ASPECT_DIMS[params.resolution]?.[params.aspectRatio];
   if (!dims) throw new Error(`No size for ${params.resolution} ${params.aspectRatio}`);
   const [width, height] = dims;
-  const startId = params.startFrame ? await upload(params.startFrame, load) : null;
-  const endId = params.endFrame ? await upload(params.endFrame, load) : null;
+  const startId = params.startFrame ? await upload(key, params.startFrame, load) : null;
+  const endId = params.endFrame ? await upload(key, params.endFrame, load) : null;
   const m = model.providerModel;
 
   // Kling 2.5 Turbo uses the older image-to-video endpoint.
@@ -100,7 +100,7 @@ export async function submit({ model, prompt, params, load }: SubmitArgs): Promi
     let last: unknown;
     for (const id of ["Kling2_5", "KLING2_5"]) {
       try {
-        const res = await call("POST", "/v1/generations-image-to-video", { ...body, model: id });
+        const res = await call(key, "POST", "/v1/generations-image-to-video", { ...body, model: id });
         return String(findKey(res, "generationId"));
       } catch (e) {
         last = e;
@@ -120,7 +120,7 @@ export async function submit({ model, prompt, params, load }: SubmitArgs): Promi
   if (startId) guidances.start_frame = [{ image: { id: startId, type: "UPLOADED" } }];
   if (endId) guidances.end_frame = [{ image: { id: endId, type: "UPLOADED" } }];
   if (!startId && !endId && params.refs.length) {
-    const ids = await Promise.all(params.refs.map((p) => upload(p, load)));
+    const ids = await Promise.all(params.refs.map((p) => upload(key, p, load)));
     guidances.image_reference = ids.map((id) => ({
       image: { id, type: "UPLOADED" },
       ...(m === "seedance-2.0" ? { strength: "MID" } : {}),
@@ -128,14 +128,14 @@ export async function submit({ model, prompt, params, load }: SubmitArgs): Promi
   }
   if (Object.keys(guidances).length) parameters.guidances = guidances;
 
-  const res = await call("POST", "/v2/generations", { model: m, public: false, parameters });
+  const res = await call(key, "POST", "/v2/generations", { model: m, public: false, parameters });
   const id = findKey(res, "generationId");
   if (!id) throw new Error(`Leonardo did not return a generation id: ${JSON.stringify(res).slice(0, 300)}`);
   return String(id);
 }
 
-export async function poll(id: string): Promise<PollResult> {
-  const res = await call("GET", `/v1/generations/${id}`);
+export async function poll(id: string, keys: Keys): Promise<PollResult> {
+  const res = await call(requireKey(keys, "leonardo"), "GET", `/v1/generations/${id}`);
   const status = String(findKey(res, "status") ?? "").toUpperCase();
   if (status === "FAILED") return { state: "failed", error: "Leonardo reported the generation failed" };
   const url = findVideoUrl(res);

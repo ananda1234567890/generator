@@ -1,8 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { isAuthed } from "@/lib/auth";
 import { Engine } from "@/components/Engine";
-import { logout } from "../login/actions";
 
 const TABS = [
   { href: "/generate", label: "Generate" },
@@ -11,8 +8,7 @@ const TABS = [
   { href: "/settings", label: "Settings" },
 ];
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  if (!(await isAuthed())) redirect("/login");
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Engine />
@@ -24,9 +20,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {t.label}
             </Link>
           ))}
-          <form action={logout} className="ml-auto">
-            <button className="rounded-md px-3 py-1.5 text-sm text-muted hover:text-foreground">Sign out</button>
-          </form>
         </nav>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>

@@ -1,5 +1,5 @@
 export type JobKind = "video" | "image" | "headshot";
-export type JobStatus = "queued" | "submitting" | "running" | "done" | "failed";
+export type JobStatus = "queued" | "submitting" | "running" | "saving" | "done" | "failed";
 
 // An image the browser sends to the server: small uploads travel as data URLs,
 // results that live at a provider link travel as URLs.

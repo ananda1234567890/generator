@@ -1,12 +1,13 @@
 "use client";
 
-import { dismissJob, retryJob, type ClientJob } from "@/lib/client/store";
+import { dismissJob, retryCopy, retryJob, type ClientJob } from "@/lib/client/store";
 import { getModel } from "@/lib/models";
 
 const LABEL: Record<string, string> = {
   queued: "Queued",
   submitting: "Starting…",
   running: "Generating…",
+  saving: "Saving a copy…",
   done: "Done",
   failed: "Failed",
 };
@@ -14,6 +15,7 @@ const LABEL: Record<string, string> = {
 function downloadHref(job: ClientJob) {
   const ext = job.kind === "video" ? "mp4" : job.mime?.includes("jpeg") ? "jpg" : "png";
   const name = `${job.kind}-${job.id.slice(0, 8)}.${ext}`;
+  if (job.localUrl) return { href: job.localUrl, name };
   if (job.dataUrl) return { href: job.dataUrl, name };
   if (job.url) return { href: `/api/download?url=${encodeURIComponent(job.url)}&name=${name}`, name };
   return null;
@@ -22,7 +24,7 @@ function downloadHref(job: ClientJob) {
 function JobCard({ job }: { job: ClientJob }) {
   const model = getModel(job.modelId);
   const active = !["done", "failed"].includes(job.status);
-  const media = job.dataUrl ?? job.url;
+  const media = job.localUrl ?? job.dataUrl ?? job.url;
   const dl = downloadHref(job);
   const m = job.meta;
   const meta = [m.resolution, m.aspectRatio, m.duration ? `${m.duration}s` : null].filter(Boolean).join(" · ");
@@ -52,6 +54,14 @@ function JobCard({ job }: { job: ClientJob }) {
           {meta && ` · ${meta}`}
         </p>
         {job.warning && <p className="text-xs text-amber-400">{job.warning}</p>}
+        {job.status === "done" && job.copyError && (
+          <p className="text-xs text-amber-400">
+            Could not keep a copy in this tab. Download it now; the provider link expires in about an hour.{" "}
+            <button onClick={() => retryCopy(job.id)} className="underline">
+              Retry copy
+            </button>
+          </p>
+        )}
         <div className="flex items-center gap-3 pt-1 text-xs">
           <span className={job.status === "failed" ? "text-red-400" : active ? "text-amber-300" : "text-emerald-400"}>
             {LABEL[job.status]}
@@ -64,6 +74,11 @@ function JobCard({ job }: { job: ClientJob }) {
           {job.status === "done" && dl && (
             <a href={dl.href} download={dl.name} className="text-accent hover:underline">
               Download
+            </a>
+          )}
+          {job.status === "done" && !job.localUrl && !job.dataUrl && job.url && (
+            <a href={job.url} target="_blank" rel="noreferrer" className="text-muted hover:text-foreground">
+              Open
             </a>
           )}
           {!active && (
